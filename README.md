@@ -3,17 +3,16 @@
 conda create -n "llm-tune" python==3.10
 conda activate llm-tune
 ```
-# Installation  
+# Installation
+Install cuda 12.1 or 12.2 and nvcc [Here](https://www.cherryservers.com/blog/install-cuda-ubuntu) if you has the different version please uninstall by `sudo apt-get purge *nvidia*` then reinstall it again in the link above
 ```
+git clone https://github.com/nguyen-brat/LLM-tuning.git
+cd LLM-tuning
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia && \
 conda clean -ya && \
 conda install -c "nvidia/label/cuda-12.1.1" cuda-nvcc && conda clean -ya
 pip install -r requirements.txt
-python -m nltk.downloader
-pip install flash-attn
-pip install deepspeed
 pip cache purge
-pip install wandb
 ```
 # Fine-tune
 ```

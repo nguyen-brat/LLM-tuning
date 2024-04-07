@@ -9,4 +9,5 @@ torch==2.2.1
 tqdm==4.65.0
 transformers==4.39.0
 trl==0.8.1
-wandb
+wandb==0.16.4
+flash-attn==2.5.6
