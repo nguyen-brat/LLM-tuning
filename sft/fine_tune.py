@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import wandb
 
 import torch
 from transformers import (
@@ -11,9 +12,10 @@ from transformers import (
     HfArgumentParser,
     TrainingArguments,
     EarlyStoppingCallback,
+    BitsAndBytesConfig,
     set_seed,
 )
-import deepspeed
+from transformers.integrations import deepspeed
 from trl import SFTTrainer
 from huggingface_hub import HfApi
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -26,8 +28,10 @@ from log import *
 from custom_save import *
 
 logger = logging.getLogger(__name__)
+local_rank = None
 
 def main():
+    global local_rank
     parser = HfArgumentParser((LoraArguments, ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -40,6 +44,15 @@ def main():
         training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
     local_rank = training_args.local_rank
+    device_map = None
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    ddp = world_size != 1
+    if lora_args.quantization:
+        device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else None
+        if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
+            logging.warning(
+                "FSDP or ZeRO3 are not incompatible with QLoRA."
+            )
     # Detecting last checkpoint.
     last_checkpoint = train_log(logger, model_args, data_args, training_args)
     set_seed(training_args.seed)
@@ -67,9 +80,9 @@ def main():
     }
 
     if model_args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
+        tokenizer = AutoTokenizer.from_pretrained(**tokenizer_kwargs)
     elif model_args.model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
+        tokenizer = AutoTokenizer.from_pretrained(**tokenizer_kwargs)
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported by this script. "
@@ -91,9 +104,11 @@ def main():
         tokenizer_kwargs=tokenizer_kwargs,
         file_paths = data_files,
         max_length = model_args.model_max_length,
-        response_template=None,
-        instruction_template=None,
-        tune_type='intruction-sft'
+        response_template=data_args.response_template,
+        instruction_template=data_args.instruction_template,
+        instruction_column=data_args.instruction_text_column,
+        response_column=data_args.response_text_column,
+        tune_type=data_args.train_type,
     )
 ################################################################ load model
     if model_args.model_name_or_path:
@@ -102,6 +117,20 @@ def main():
             if model_args.torch_dtype in ["auto", None]
             else getattr(torch, model_args.torch_dtype)
         )
+        quantization_config=None
+        if lora_args.quantization == 4:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch_dtype
+            )
+        elif lora_args.quantization == 8:
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                bnb_8bit_compute_dtype=torch_dtype
+            )
+        else:
+            if lora_args.quantization:
+                raise ValueError(f"Not support lora quantization in {lora_args.quantization} bit")
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             config=config,
@@ -109,11 +138,10 @@ def main():
             revision=model_args.model_revision,
             token=model_args.token,
             trust_remote_code=model_args.trust_remote_code,
-            torch_dtype=torch_dtype,
-            low_cpu_mem_usage=model_args.low_cpu_mem_usage,
-            quantization_config=GPTQConfig(
-                bits=lora_args.quantization, disable_exllama=True
-            ) if lora_args.quantization else None,
+            #device_map=device_map,
+            # torch_dtype=torch_dtype,
+            # low_cpu_mem_usage=model_args.low_cpu_mem_usage,
+            quantization_config=quantization_config,
             use_flash_attention_2=model_args.use_flash_attention_2,
         )
     else:
@@ -133,24 +161,28 @@ def main():
             )
         model = get_peft_model(model, lora_config)
     
-    # if training_args.gradient_checkpointing:
-    #     model.enable_input_require_grads()
+    if training_args.gradient_checkpointing:
+        model.enable_input_require_grads()
 
     if model_args.use_flash_attention_2:
         model.config.use_cache = False
-    model.config.use_cache = False
+    model.config.use_cache = not training_args.gradient_checkpointing
 
 ##################################################################################### Trainer
     # Initialize our Trainer
-    callbacks = [EarlyStoppingCallback(early_stopping_patience=2, early_stopping_threshold=0.05)]
+    if training_args.do_eval:
+        callbacks = [EarlyStoppingCallback(early_stopping_patience=data_args.patient)]
+    else:
+        callbacks = []
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         max_seq_length=tokenizer.model_max_length,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        callbacks=callbacks,
+        callbacks=callbacks if training_args.do_eval else None,
         peft_config=lora_config,
+        packing=True,
         **data_loader,
         #dataset_text_field="text",
     )
@@ -165,6 +197,7 @@ def main():
         trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_state()
         trainer.save_model()
+        wandb.finish()
         #safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir, bias=lora_args.lora_bias)
 
     # if training_args.push_to_hub:
@@ -181,5 +214,4 @@ def main():
     #         )
 
 if __name__ == "__main__":
-    # main()
-    pass
+    main()

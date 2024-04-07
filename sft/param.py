@@ -61,8 +61,8 @@ class LoraArguments:
     quantization: Optional[int] = field(
         default=None,
         metadata={
-            "help": "train with which qlora if None train normal without quantization",
-            "choices": ["4, 8, or None"],
+            "help": "train with which qlora if None train normal without quantization. 0 mean no quantization",
+            "choices": [4, 8, 0],
         }
     )
     lora_bias: str = field(
@@ -195,6 +195,32 @@ class DataTrainingArguments:
         metadata={
             "help": "The percentage of the train set used as validation set in case there's no validation split"
         },
+    )
+    response_template: str = field(
+        default="###Synthetic",
+        metadata={"help": "String sign where the model start to response the users"},
+    )
+    instruction_template: str = field(
+        default=None,
+        metadata={"help": "String sign where the user start instruction"},
+    )
+    instruction_text_column: str = field(
+        default="instruction",
+        metadata={"help": "String sign where the user start instruction"},
+    )
+    response_text_column: str = field(
+        default="response",
+        metadata={"help": "String sign where the user start instruction"},
+    )
+    train_type: str = field(
+        default="intruction-sft",
+        metadata={
+            "help": "insutruction-sft if you want to train with instruction tuning and unsupervise-tune if you want to tune with Auto-regression on full dataset",
+            "choices": ["intruction-sft", "unsupervise-tune"]
+        },
+    )
+    patient: int = field(
+        default=9999, metadata={"help": "if in a given number of epoch or step the val acc or loss not improve training process will be corrupt"}
     )
 
     def __post_init__(self):

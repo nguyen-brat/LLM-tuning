@@ -8,21 +8,18 @@ from transformers import (
     AutoTokenizer,
     DataCollatorForLanguageModeling,
 )
-from torch.utils.data import DataLoader, Dataset
-
+from torch.utils.data import Dataset, DataLoader
+from datasets import load_dataset
 
 class LazyCustomDataloader(Dataset):
-    def __init__(self, tokenizer_kwargs, file_paths, max_length):
+    def __init__(self, tokenizer_kwargs, file_paths, max_length, instruction_column = "instruction", response_column = "response"):
         self.tokenizer = AutoTokenizer.from_pretrained(**tokenizer_kwargs)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.load(file_paths)
-
-        # if tune_type == 'intruction-sft':
-        #     self.collator = DataCollatorForCompletionOnlyLM(response_template, instruction_template=instruction_template, tokenizer=self.tokenizer, mlm=False)
-        # elif tune_type == 'unsupervise-tune':
-        #     self.collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
         self.max_length = max_length
+        self.instruction_column = instruction_column
+        self.response_column = response_column
         self.cached_data_dict = {}
 
     def __len__(self):
@@ -32,8 +29,8 @@ class LazyCustomDataloader(Dataset):
         if idx in self.cached_data_dict:
             return self.cached_data_dict[idx]
         message = [
-            {'role': 'user', 'content':self.data["instruction"][idx]},
-            {'role': 'assistant', 'content':self.data["response"][idx]}
+            {'role': 'user', 'content':self.data[self.instruction_column][idx]},
+            {'role': 'assistant', 'content':self.data[self.response_column][idx]}
         ]
         output_text = self.tokenizer.apply_chat_template(
             message,
@@ -43,16 +40,12 @@ class LazyCustomDataloader(Dataset):
         outputs_ids = self.tokenizer(
             [output_text],
             max_length=self.max_length,
-            # padding='max_length',
             truncation=True,
             return_attention_mask=True,
             return_token_type_ids=False,
         )
-        #torch_input_ids = self.collator.torch_call(outputs_ids.input_ids)
         output = dict(
             input_ids=outputs_ids["input_ids"][0],
-            #labels=torch_input_ids["labels"][0],
-            # attention_mask=torch.Tensor(outputs_ids["attention_mask"][0]),
             attention_mask=outputs_ids["attention_mask"][0],
         )
         self.cached_data_dict[idx] = output
@@ -60,14 +53,7 @@ class LazyCustomDataloader(Dataset):
 
     def load(self, file_path):
         extension = file_path.split('.')[-1]
-        if extension == 'json':
-            with open(file_path, 'r') as f:
-                self.data = json.load(f)
-        elif extension == 'csv':
-            self.data = pd.read_csv(file_path)
-        else:
-            ValueError("this file extension is not currently support")
-
+        self.data = load_dataset(extension, data_files=file_path)["train"]
 
 class DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
     """
@@ -209,17 +195,27 @@ class DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                     batch["labels"][i, human_token_ids_idxs[-1] :] = self.ignore_index
         return batch
 
-def get_dataloader_collator(tokenizer_kwargs, file_paths, max_length, response_template=None, instruction_template=None, tune_type='intruction-sft'):
-    train_dataloader = LazyCustomDataloader(tokenizer_kwargs, file_paths["train"], max_length)
+def get_dataloader_collator(
+        tokenizer_kwargs,
+        file_paths,
+        max_length,
+        response_template=None,
+        instruction_template=None,
+        instruction_column = "instruction",
+        response_column = "response",
+        tune_type='intruction-sft',
+):
+    train_dataloader = LazyCustomDataloader(tokenizer_kwargs, file_paths["train"], max_length, instruction_column, response_column)
     if "validation" in file_paths.keys():
-        val_dataloader = LazyCustomDataloader(tokenizer_kwargs, file_paths["validation"], max_length)
+        val_dataloader = LazyCustomDataloader(tokenizer_kwargs, file_paths["validation"], max_length, instruction_column, response_column)
     tokenizer = AutoTokenizer.from_pretrained(**tokenizer_kwargs)
     tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.pad_token_id = tokenizer.eos_token_id
     if tune_type == 'intruction-sft':
-        data_collator = DataCollatorForCompletionOnlyLM(response_template=response_template, instruction_template=instruction_template, tokenizer=tokenizer, mlm=False)
+        data_collator = DataCollatorForCompletionOnlyLM(response_template=response_template, instruction_template=instruction_template, tokenizer=tokenizer)
     elif tune_type == 'unsupervise-tune':
         data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    else:
+        raise ValueError(f"Not support {tune_type} tuning type")
     if "validation" in file_paths.keys():
         dataset_loader = dict(train_dataset=train_dataloader, eval_dataset=val_dataloader)
     else:
@@ -228,7 +224,7 @@ def get_dataloader_collator(tokenizer_kwargs, file_paths, max_length, response_t
 
 if __name__ == '__main__':
     # tokenizer_kwargs = {
-    #     "pretrained_model_name_or_path":"mistralai/Mistral-7B-Instruct-v0.2",
+    #     "pretrained_model_name_or_path":"Qwen/Qwen1.5-7B-Chat",
     #     "padding_side":"right"
     # }
     # data_path = {
@@ -237,12 +233,14 @@ if __name__ == '__main__':
     # }
     # loader, collator = get_dataloader_collator(
     #     tokenizer_kwargs = tokenizer_kwargs,
-    #     file_paths=data_path["train"],
+    #     file_paths=data_path,
     #     max_length=2048,
-    #     response_template="###Synthetic",
-    #     instruction_template="###Captions",
+    #     instruction_column="instruction",
+    #     response_column="response",
+    #     response_template="<|im_start|>assistant",
+    #     #instruction_template="###Captions",
     # )
-    # full_loader = DataLoader(loader, batch_size=4, collate_fn=collator)
+    # full_loader = DataLoader(loader["train_dataset"], batch_size=4, collate_fn=collator)
     # for i in full_loader:
     #     print(i)
     #     exit()
