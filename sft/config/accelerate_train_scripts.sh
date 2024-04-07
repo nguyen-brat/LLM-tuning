@@ -11,7 +11,7 @@ ACCELERATE_PATH=${DIR}/sft/config/accelerate_config.yaml
 HUB_MODEL_ID="nguyen-brat/combine-qwen1.5-7b-bf16-train_v2"
 WANDBRUNNAME="offical-combine-model-training-qwen"
 DEEPSPEED_PATH=${DIR}/sft/config/zero3.json
-LOCAL_MODEL_SAVE_DIR=${DIR}/model/combine_model_v3
+LOCAL_MODEL_SAVE_DIR=${DIR}/model/your_model_name
 
 TRAINING_ARGS=(
     --model_name_or_path $MODEL
