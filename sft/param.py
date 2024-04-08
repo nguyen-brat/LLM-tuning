@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union, List
 from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
 from transformers.utils.versions import require_version
 

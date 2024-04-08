@@ -32,10 +32,12 @@ TRAINING_ARGS=(
     --gradient_accumulation_steps 8
     --train_type "unsupervise-tune"
     --use_peft True
+    --target_modules "all-linear,embed_tokens"
     --patient 2
     --deepspeed $DEEPSPEED_PATH
     --save_safetensors True
     --quantization 0
+    --overwrite_output_dir True
 )
 DATA_ARGS=(
     --do_train True

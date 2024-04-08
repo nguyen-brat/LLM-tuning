@@ -138,9 +138,9 @@ def main():
             revision=model_args.model_revision,
             token=model_args.token,
             trust_remote_code=model_args.trust_remote_code,
-            #device_map=device_map,
+            # device_map=device_map,
             # torch_dtype=torch_dtype,
-            # low_cpu_mem_usage=model_args.low_cpu_mem_usage,
+            low_cpu_mem_usage=model_args.low_cpu_mem_usage,
             quantization_config=quantization_config,
             use_flash_attention_2=model_args.use_flash_attention_2,
         )
@@ -155,9 +155,9 @@ def main():
                 r=lora_args.lora_r,
                 lora_alpha=lora_args.lora_alpha,
                 lora_dropout=lora_args.lora_dropout,
-                bias="none",
+                bias=lora_args.lora_bias,
                 task_type="CAUSAL_LM",
-                target_modules=lora_args.target_modules,
+                target_modules=lora_args.target_modules.split(','),
             )
         model = get_peft_model(model, lora_config)
     
@@ -197,21 +197,8 @@ def main():
         trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_state()
         trainer.save_model()
-        wandb.finish()
         #safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir, bias=lora_args.lora_bias)
-
-    # if training_args.push_to_hub:
-    #     if PartialState().process_index == 0:
-    #         # remove data folder\
-    #         logger.info("Pushing model to hub...")
-    #         api = HfApi(token=os.environ.get("HF_TOKEN"))
-    #         api.create_repo(training_args.hub_model_id, repo_type="model", private=True, exist_ok=True)
-    #         api.upload_folder(
-    #             folder_path="/home/nguyen/code/llm-tune/model/combine_model",
-    #             repo_id=training_args.hub_model_id,
-    #             repo_type="model",
-    #             token=os.environ.get("HF_TOKEN")
-    #         )
+        wandb.finish()
 
 if __name__ == "__main__":
     main()
