@@ -8,15 +8,19 @@ Install cuda 12.1 or 12.2 and nvcc [Here](https://www.cherryservers.com/blog/ins
 ```
 git clone https://github.com/nguyen-brat/LLM-tuning.git
 cd LLM-tuning
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia && \
-conda clean -ya && \
-conda install -c "nvidia/label/cuda-12.1.1" cuda-nvcc && conda clean -ya
+conda install pytorch-cuda=<12.1/11.8> pytorch cudatoolkit xformers -c pytorch -c nvidia -c xformers && \
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 pip install -r requirements.txt
 pip cache purge
 ```
 # Fine-tune
+Using deepspeed (Faster, offload less to cpu, probaly same ram saved with fsdp)
 ```
-bash llm-tune/custom_train/src/sft/config/accelerate_train_scripts.sh
+bash sft/config/accelerate_train_scripts.sh
+```
+Using fsdp (slower, offload more ram on cpu, probaly save more vram ???)
+```
+bash sft/config/fsdp_accelerate.sh
 ```
 The script support all training argument of huggingface trainer and some custom argument. Please read code in file `sft/param.py` too see all option
 # Help

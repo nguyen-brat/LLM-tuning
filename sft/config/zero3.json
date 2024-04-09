@@ -8,7 +8,7 @@
         "min_loss_scale": 1
     },
     "bf16": {
-        "enabled": "auto"
+        "enabled": true
     },
     "optimizer": {
         "type": "AdamW",
@@ -32,11 +32,11 @@
     "zero_optimization": {
         "stage": 3,
         "offload_optimizer": {
-            "device": "none",
+            "device": "cpu",
             "pin_memory": true
         },
         "offload_param": {
-            "device": "none",
+            "device": "cpu",
             "pin_memory": true
         },
         "overlap_comm": true,

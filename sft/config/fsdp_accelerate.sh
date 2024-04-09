@@ -8,7 +8,7 @@ MODEL="Qwen/Qwen1.5-7B-Chat"
 #DATA="/home/nguyen/code/llm-tune/data/combine_multi_view/train/combine_pedestrian_vid_name.csv"
 DATA=${DIR}/data/translated_train_cleaned.csv
 EVAL_DATA=${DIR}/data/translated_train_cleaned.csv
-ACCELERATE_PATH=${DIR}/sft/config/ds_accelerate_config.yaml
+ACCELERATE_PATH=${DIR}/sft/config/fsdp.yaml
 HUB_MODEL_ID="nguyen-brat/combine-qwen1.5-7b-bf16-train_v2"
 WANDBRUNNAME="offical-combine-model-training-qwen"
 DEEPSPEED_PATH=${DIR}/sft/config/zero3.json
@@ -28,8 +28,8 @@ TRAINING_ARGS=(
     --use_flash_attention_2 True
     --gradient_checkpointing True
     --num_train_epochs 1
-    --per_device_train_batch_size 1
-    --per_device_eval_batch_size 1
+    --per_device_train_batch_size 2
+    --per_device_eval_batch_size 2
     --gradient_accumulation_steps 16
     --train_type "unsupervise-tune"
     --low_cpu_mem_usage False
@@ -76,7 +76,8 @@ DISTRIBUTED_ARGS="
     --master_port $MASTER_PORT
 "
 
-accelerate launch --config_file $ACCELERATE_PATH --deepspeed_config_file $DEEPSPEED_PATH ${DIR}/sft/fine_tune.py \
+accelerate launch \
+    --config_file $ACCELERATE_PATH ${DIR}/sft/fine_tune.py \
     ${TRAINING_ARGS[@]} \
     ${DATA_ARGS[@]} \
     ${EVAL_AND_LOGGING_ARGS[@]}

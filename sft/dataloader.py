@@ -223,25 +223,27 @@ def get_dataloader_collator(
     return dataset_loader, data_collator
 
 if __name__ == '__main__':
+    # max_length = 2048
     # tokenizer_kwargs = {
     #     "pretrained_model_name_or_path":"Qwen/Qwen1.5-7B-Chat",
-    #     "padding_side":"right"
+    #     "padding_side":"right",
+    #     "model_max_length":max_length,
     # }
     # data_path = {
-    #     "train":"/home/nguyen/code/llm-tune/data/combine_multi_view/train/combine_pedestrian_vid_name.csv",
-    #     "validation":"/home/nguyen/code/llm-tune/data/combine_multi_view/train/combine_pedestrian_vid_name.csv"
+    #     "train":"/home/nguyen/code/llm-tune/custom_train/src/data/mix_insft_2k.json",
+    #     "validation":"/home/nguyen/code/llm-tune/custom_train/src/data/mix_insft_2k.json"
     # }
     # loader, collator = get_dataloader_collator(
     #     tokenizer_kwargs = tokenizer_kwargs,
     #     file_paths=data_path,
-    #     max_length=2048,
+    #     max_length=max_length,
     #     instruction_column="instruction",
-    #     response_column="response",
+    #     response_column="output",
     #     response_template="<|im_start|>assistant",
-    #     #instruction_template="###Captions",
+    #     instruction_template="###Captions",
+    #     tune_type='unsupervise-tune'
     # )
-    # full_loader = DataLoader(loader["train_dataset"], batch_size=4, collate_fn=collator)
+    # full_loader = DataLoader(loader["train_dataset"], batch_size=16, collate_fn=collator)
     # for i in full_loader:
-    #     print(i)
-    #     exit()
+    #     print(i.input_ids.shape)
     pass

@@ -40,19 +40,24 @@ def main():
     else:
         lora_args, model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    if getattr(training_args, 'deepspeed', None) and getattr(lora_args, 'quantization', False):
-        training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
+    # if getattr(training_args, 'deepspeed', None) and getattr(lora_args, 'quantization', False):
+    #     training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
-    local_rank = training_args.local_rank
-    device_map = None
-    world_size = int(os.environ.get("WORLD_SIZE", 1))
-    ddp = world_size != 1
-    if lora_args.quantization:
-        device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else None
-        if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
-            logging.warning(
-                "FSDP or ZeRO3 are not incompatible with QLoRA."
-            )
+    compute_dtype = (
+        torch.float16
+        if training_args.fp16
+        else (torch.bfloat16 if training_args.bf16 else torch.float32)
+    )
+    # local_rank = training_args.local_rank
+    # device_map = None
+    # world_size = int(os.environ.get("WORLD_SIZE", 1))
+    # ddp = world_size != 1
+    # if lora_args.quantization:
+    #     device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else None
+    #     if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
+    #         logging.warning(
+    #             "FSDP or ZeRO3 are not incompatible with QLoRA."
+    #         )
     # Detecting last checkpoint.
     last_checkpoint = train_log(logger, model_args, data_args, training_args)
     set_seed(training_args.seed)
@@ -76,7 +81,8 @@ def main():
         "revision": model_args.model_revision,
         "token": model_args.token,
         "trust_remote_code": model_args.trust_remote_code,
-        "padding_side":"right"
+        "padding_side":"right",
+        "model_max_length":model_args.model_max_length,
     }
 
     if model_args.tokenizer_name:
@@ -103,7 +109,7 @@ def main():
     data_loader, data_collator = get_dataloader_collator(
         tokenizer_kwargs=tokenizer_kwargs,
         file_paths = data_files,
-        max_length = model_args.model_max_length,
+        max_length = tokenizer.model_max_length,
         response_template=data_args.response_template,
         instruction_template=data_args.instruction_template,
         instruction_column=data_args.instruction_text_column,
@@ -112,21 +118,21 @@ def main():
     )
 ################################################################ load model
     if model_args.model_name_or_path:
-        torch_dtype = (
-            model_args.torch_dtype
-            if model_args.torch_dtype in ["auto", None]
-            else getattr(torch, model_args.torch_dtype)
-        )
+        # torch_dtype = (
+        #     model_args.torch_dtype
+        #     if model_args.torch_dtype in ["auto", None]
+        #     else getattr(torch, model_args.torch_dtype)
+        # )
         quantization_config=None
         if lora_args.quantization == 4:
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch_dtype
+                bnb_4bit_compute_dtype=compute_dtype
             )
         elif lora_args.quantization == 8:
             quantization_config = BitsAndBytesConfig(
                 load_in_8bit=True,
-                bnb_8bit_compute_dtype=torch_dtype
+                bnb_8bit_compute_dtype=compute_dtype
             )
         else:
             if lora_args.quantization:
@@ -139,14 +145,13 @@ def main():
             token=model_args.token,
             trust_remote_code=model_args.trust_remote_code,
             # device_map=device_map,
-            # torch_dtype=torch_dtype,
+            torch_dtype=compute_dtype,
             low_cpu_mem_usage=model_args.low_cpu_mem_usage,
             quantization_config=quantization_config,
-            use_flash_attention_2=model_args.use_flash_attention_2,
+            attn_implementation="flash_attention_2" if model_args.use_flash_attention_2 else "eager",
         )
     else:
         raise ValueError("You must specify model_name_or_path")
-
     if lora_args.use_peft:
         logger.info("preparing peft model...")
         if lora_args.quantization:
@@ -157,16 +162,14 @@ def main():
                 lora_dropout=lora_args.lora_dropout,
                 bias=lora_args.lora_bias,
                 task_type="CAUSAL_LM",
-                target_modules=lora_args.target_modules.split(','),
+                target_modules=lora_args.target_modules.split(',') if len(lora_args.target_modules.split(','))>1 else lora_args.target_modules,
             )
         model = get_peft_model(model, lora_config)
     
     if training_args.gradient_checkpointing:
         model.enable_input_require_grads()
 
-    if model_args.use_flash_attention_2:
-        model.config.use_cache = False
-    model.config.use_cache = not training_args.gradient_checkpointing
+    model.config.use_cache = False
 
 ##################################################################################### Trainer
     # Initialize our Trainer
@@ -199,6 +202,32 @@ def main():
         trainer.save_model()
         #safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir, bias=lora_args.lora_bias)
         wandb.finish()
+
+        if trainer.args.process_index == 0:
+            if model_args.merge_adapters:
+                # merge adapter weights with base model and save
+                trainer.model.save_pretrained(training_args.output_dir, safe_serialization=False)
+                # clear memory
+                del model
+                del trainer
+                torch.cuda.empty_cache()
+                from peft import AutoPeftModelForCausalLM
+                # load PEFT model in fp16
+                model = AutoPeftModelForCausalLM.from_pretrained(
+                    training_args.output_dir,
+                    low_cpu_mem_usage=True,
+                    torch_dtype=torch.float16,
+                )  
+                # Merge LoRA and base model and save
+                model = model.merge_and_unload()        
+                model.save_pretrained(
+                    training_args.output_dir, safe_serialization=True, max_shard_size="8GB"
+                )
+            else:
+                trainer.model.save_pretrained(
+                    training_args.output_dir, safe_serialization=True
+                ) 
+            tokenizer.save_pretrained(training_args.output_dir)
 
 if __name__ == "__main__":
     main()
