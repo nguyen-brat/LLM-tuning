@@ -186,6 +186,7 @@ def main():
         callbacks=callbacks if training_args.do_eval else None,
         peft_config=lora_config,
         packing=True,
+        gradient_checkpointing_kwargs={'use_reentrant':False}
         **data_loader,
         #dataset_text_field="text",
     )
@@ -202,32 +203,6 @@ def main():
         trainer.save_model()
         #safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir, bias=lora_args.lora_bias)
         wandb.finish()
-
-        if trainer.args.process_index == 0:
-            if model_args.merge_adapters:
-                # merge adapter weights with base model and save
-                trainer.model.save_pretrained(training_args.output_dir, safe_serialization=False)
-                # clear memory
-                del model
-                del trainer
-                torch.cuda.empty_cache()
-                from peft import AutoPeftModelForCausalLM
-                # load PEFT model in fp16
-                model = AutoPeftModelForCausalLM.from_pretrained(
-                    training_args.output_dir,
-                    low_cpu_mem_usage=True,
-                    torch_dtype=torch.float16,
-                )  
-                # Merge LoRA and base model and save
-                model = model.merge_and_unload()        
-                model.save_pretrained(
-                    training_args.output_dir, safe_serialization=True, max_shard_size="8GB"
-                )
-            else:
-                trainer.model.save_pretrained(
-                    training_args.output_dir, safe_serialization=True
-                ) 
-            tokenizer.save_pretrained(training_args.output_dir)
 
 if __name__ == "__main__":
     main()

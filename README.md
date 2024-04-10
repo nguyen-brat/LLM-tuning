@@ -16,7 +16,7 @@ pip cache purge
 # Fine-tune
 Using deepspeed (Faster, offload less to cpu, probaly same ram saved with fsdp)
 ```
-bash sft/config/accelerate_train_scripts.sh
+bash sft/config/deepspeed_accelerate.sh
 ```
 Using fsdp (slower, offload more ram on cpu, probaly save more vram ???)
 ```
