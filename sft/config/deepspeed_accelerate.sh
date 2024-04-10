@@ -30,9 +30,9 @@ TRAINING_ARGS=(
     --use_flash_attention_2 true
     --gradient_checkpointing true
     --num_train_epochs 5
-    --per_device_train_batch_size 1
-    --per_device_eval_batch_size 1
-    --gradient_accumulation_steps 16
+    --per_device_train_batch_size 4
+    --per_device_eval_batch_size 4
+    --gradient_accumulation_steps 4
     --train_type "unsupervise-tune"
     --low_cpu_mem_usage False
     --use_peft true

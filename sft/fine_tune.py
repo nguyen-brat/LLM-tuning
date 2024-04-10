@@ -165,12 +165,12 @@ def main():
                 target_modules=lora_args.target_modules.split(',') if len(lora_args.target_modules.split(','))>1 else lora_args.target_modules,
             )
         model = get_peft_model(model, lora_config)
+        model.enable_input_require_grads()
     
     if training_args.gradient_checkpointing:
-        model.enable_input_require_grads()
-
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.config.use_cache = False
-
+    training_args.gradient_checkpointing_kwargs={"use_reentrant": False}
 ##################################################################################### Trainer
     # Initialize our Trainer
     if training_args.do_eval:
@@ -186,7 +186,6 @@ def main():
         callbacks=callbacks if training_args.do_eval else None,
         peft_config=lora_config,
         packing=True,
-        gradient_checkpointing_kwargs={'use_reentrant':False}
         **data_loader,
         #dataset_text_field="text",
     )
