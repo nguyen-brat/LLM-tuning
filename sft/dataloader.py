@@ -53,7 +53,7 @@ class LazyCustomDataloader(Dataset):
 
     def load(self, file_path):
         extension = file_path.split('.')[-1]
-        self.data = load_dataset(extension, data_files=file_path)["train"][:1000]
+        self.data = load_dataset(extension, data_files=file_path)["train"]
 
 class DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
     """

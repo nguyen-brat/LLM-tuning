@@ -29,7 +29,7 @@ TRAINING_ARGS=(
     --lr_scheduler_type "cosine"
     --use_flash_attention_2 true
     --gradient_checkpointing true
-    --num_train_epochs 1
+    --num_train_epochs 5
     --per_device_train_batch_size 1
     --per_device_eval_batch_size 1
     --gradient_accumulation_steps 16
@@ -59,10 +59,10 @@ EVAL_AND_LOGGING_ARGS=(
     --run_name $WANDBRUNNAME
     --output_dir $LOCAL_MODEL_SAVE_DIR
     --evaluation_strategy "epoch"
-    # --eval_accumulation_steps 10
-    # --eval_steps 0.5
+    --eval_accumulation_steps 10
+    #--eval_steps 0.1
     --save_strategy "epoch"
-    # --save_steps 0.5
+    #--save_steps 0.1
     --save_total_limit 1
     --logging_steps 1
     --load_best_model_at_end true
@@ -70,10 +70,10 @@ EVAL_AND_LOGGING_ARGS=(
     --report_to "wandb"
 )
 
-# accelerate launch --config_file $ACCELERATE_PATH --deepspeed_config_file $DEEPSPEED_PATH ${DIR}/sft/fine_tune.py \
-#     ${TRAINING_ARGS[@]} \
-#     ${DATA_ARGS[@]} \
-#     ${EVAL_AND_LOGGING_ARGS[@]}
+accelerate launch --config_file $ACCELERATE_PATH --deepspeed_config_file $DEEPSPEED_PATH ${DIR}/sft/fine_tune.py \
+    ${TRAINING_ARGS[@]} \
+    ${DATA_ARGS[@]} \
+    ${EVAL_AND_LOGGING_ARGS[@]}
 
 bf16_value=false
 for arg in "${TRAINING_ARGS[@]}"; do
